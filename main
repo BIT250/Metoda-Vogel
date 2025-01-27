@@ -1,0 +1,116 @@
+import pandas as pd
+import numpy as np
+import time
+import os
+from scipy.optimize import linprog
+
+# Function to solve the transportation problem with fixed depot costs using linear programming
+def solve_transportation_problem_with_fixed_costs(supply, demand, costs, fixed_costs, instance_name):
+    start_time = time.time()
+    
+    # Flatten the cost matrix and add fixed costs
+    num_depots = len(supply)
+    num_stores = len(demand)
+    c = costs.flatten()
+    c = np.concatenate([c, fixed_costs])
+
+    # Construct the equality constraints for supply and demand
+    A_eq = []
+    for i in range(num_depots):
+        row = [0] * (num_depots * num_stores + num_depots)
+        for j in range(num_stores):
+            row[i * num_stores + j] = 1
+        row[num_depots * num_stores + i] = -supply[i]
+        A_eq.append(row)
+
+    for j in range(num_stores):
+        row = [0] * (num_depots * num_stores + num_depots)
+        for i in range(num_depots):
+            row[i * num_stores + j] = 1
+        A_eq.append(row)
+
+    A_eq = np.array(A_eq)
+    b_eq = np.concatenate([supply, demand])
+
+    # Bounds for each decision variable (flow and fixed cost activation)
+    x_bounds = [(0, None) for _ in range(num_depots * num_stores)] + [(0, 1) for _ in range(num_depots)]
+
+    # Solve the linear program
+    result = linprog(c, A_eq=A_eq, b_eq=b_eq, bounds=x_bounds, method="highs")
+    
+    runtime = time.time() - start_time
+    
+    if result.success:
+        flow_matrix = result.x[:num_depots * num_stores].reshape((num_depots, num_stores))
+        depot_activation = result.x[num_depots * num_stores:]
+        return {
+            "instance_name": instance_name,
+            "optimal_cost": result.fun,
+            "iterations": result.nit,
+            "runtime": runtime,
+            "solved": True,
+            "solution_matrix": flow_matrix,
+            "depot_activation": depot_activation
+        }
+    else:
+        return {
+            "instance_name": instance_name,
+            "optimal_cost": None,
+            "iterations": result.nit,
+            "runtime": runtime,
+            "solved": False,
+            "solution_matrix": None,
+            "depot_activation": None
+        }
+
+# Main function to process instances and generate results
+def main():
+    input_folder = "Lab_FCD_instances"
+    output_folder = "Lab_FCD_solved"
+    summary_file = "Lab_FCD_solved_1-3.xls"
+
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    summary_data = []
+
+    # Iterate over instance files
+    for filename in os.listdir(input_folder):
+        if filename.endswith(".csv"):
+            filepath = os.path.join(input_folder, filename)
+            instance_name = os.path.splitext(filename)[0]
+
+            # Load instance data
+            data = pd.read_csv(filepath)
+            supply = data.iloc[0, 1:].values
+            demand = data.iloc[1:, 0].values
+            costs = data.iloc[1:, 1:-1].values
+            fixed_costs = data.iloc[0, -1].values
+
+            # Solve the problem
+            result = solve_transportation_problem_with_fixed_costs(supply, demand, costs, fixed_costs, instance_name)
+
+            # Save the solution matrix and depot activation if solved
+            if result["solved"]:
+                solution_filepath = os.path.join(output_folder, f"{instance_name}_solution.csv")
+                pd.DataFrame(result["solution_matrix"]).to_csv(solution_filepath, index=False, header=False)
+                depot_activation_filepath = os.path.join(output_folder, f"{instance_name}_depot_activation.csv")
+                pd.DataFrame(result["depot_activation"].reshape(1, -1)).to_csv(depot_activation_filepath, index=False, header=False)
+
+            # Append to summary data
+            summary_data.append([
+                result["instance_name"],
+                result["optimal_cost"],
+                result["iterations"],
+                result["runtime"],
+                result["solved"]
+            ])
+
+    # Save summary file
+    summary_df = pd.DataFrame(summary_data, columns=[
+        "numele_instanței", "optimul_obținut", "numarul_de_iteratii_pentru_solutionarea_problemei", "timpul_de_rulare_in_secunde", "daca_a_fost_solutionata_problema"
+    ])
+    summary_df.to_excel(summary_file, index=False)
+
+if __name__ == "__main__":
+    main()
