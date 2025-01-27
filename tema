@@ -1,0 +1,94 @@
+import pandas as pd
+import numpy as np
+import time
+import os
+
+# Function to solve the transportation problem using Vogel's Approximation Method
+def vogel_approximation_method(supply, demand, costs):
+    supply = supply.copy()
+    demand = demand.copy()
+    allocation = np.zeros_like(costs)
+
+    while np.any(supply > 0) and np.any(demand > 0):
+        # Calculate penalties for rows and columns
+        row_penalties = [sorted(row[row > 0])[:2] for row in costs]
+        col_penalties = [sorted(col[col > 0])[:2] for col in costs.T]
+
+        row_penalties = [abs(p[1] - p[0]) if len(p) > 1 else p[0] for p in row_penalties]
+        col_penalties = [abs(p[1] - p[0]) if len(p) > 1 else p[0] for p in col_penalties]
+
+        # Find the maximum penalty
+        max_row_penalty = max(row_penalties)
+        max_col_penalty = max(col_penalties)
+
+        if max_row_penalty >= max_col_penalty:
+            row_index = row_penalties.index(max_row_penalty)
+            col_index = np.argmin(costs[row_index])
+        else:
+            col_index = col_penalties.index(max_col_penalty)
+            row_index = np.argmin(costs[:, col_index])
+
+        # Allocate to the selected cell
+        allocation_amount = min(supply[row_index], demand[col_index])
+        allocation[row_index, col_index] = allocation_amount
+        supply[row_index] -= allocation_amount
+        demand[col_index] -= allocation_amount
+
+        # Invalidate the allocated row or column
+        if supply[row_index] == 0:
+            costs[row_index, :] = np.inf
+        if demand[col_index] == 0:
+            costs[:, col_index] = np.inf
+
+    return allocation
+
+# Main function to process instances and generate results using Vogel's Approximation Method
+def main():
+    input_folder = "Lab_VAM_instances"
+    output_folder = "Lab_VAM_solved"
+    summary_file = "Lab_VAM_solved_1-3.xls"
+
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    summary_data = []
+
+    # Iterate over instance files
+    for filename in os.listdir(input_folder):
+        if filename.endswith(".csv"):
+            filepath = os.path.join(input_folder, filename)
+            instance_name = os.path.splitext(filename)[0]
+
+            # Load instance data
+            data = pd.read_csv(filepath)
+            supply = data.iloc[0, 1:].values
+            demand = data.iloc[1:, 0].values
+            costs = data.iloc[1:, 1:].values
+
+            # Solve the problem
+            start_time = time.time()
+            allocation = vogel_approximation_method(supply, demand, costs)
+            total_cost = np.sum(allocation * costs)
+            runtime = time.time() - start_time
+
+            # Save the solution matrix
+            solution_filepath = os.path.join(output_folder, f"{instance_name}_solution.csv")
+            pd.DataFrame(allocation).to_csv(solution_filepath, index=False, header=False)
+
+            # Append to summary data
+            summary_data.append([
+                instance_name,
+                total_cost,
+                "N/A",  # Vogel's method does not iterate like LP
+                runtime,
+                True
+            ])
+
+    # Save summary file
+    summary_df = pd.DataFrame(summary_data, columns=[
+        "numele_instanței", "optimul_obținut", "numarul_de_iteratii_pentru_solutionarea_problemei", "timpul_de_rulare_in_secunde", "daca_a_fost_solutionata_problema"
+    ])
+    summary_df.to_excel(summary_file, index=False)
+
+if __name__ == "__main__":
+    main()
